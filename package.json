@@ -1,8 +1,14 @@
 {
-  "name": "scheme",
-  "author": "Steve Champagne <champagst@gmail.com>",
-  "description": "Write Yourself a Scheme in 48 Hours",
-  "dependencies": {
-    "parsimmon": "^0.9.1"
-  }
+   "name": "scheme",
+   "author": "Steve Champagne <champagst@gmail.com>",
+   "description": "Write Yourself a Scheme in 48 Hours",
+   "scripts": {
+      "test": "ava"
+   },
+   "dependencies": {
+      "parsimmon": "^0.9.1"
+   },
+   "devDependencies": {
+      "ava": "^0.15.2"
+   }
 }
