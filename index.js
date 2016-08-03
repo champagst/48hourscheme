@@ -41,6 +41,8 @@
    // Parsers -----------------------------------------------------------------
    var symbol = P.oneOf('!#$%&|*+-/:<=>?@^_~');
 
+   var spaces = P.whitespace.atLeast(1)
+
    var parseString = P.oneOf('"')
                       .then(
                          P.alt(P.string('\\"'), P.noneOf('"'))
@@ -54,6 +56,19 @@
                              return { type: 'string', value: value }; 
                           }))
                       .skip(P.oneOf('"'));
+
+   var parseCharacter = P.string('#\\')
+                         .then(
+                           P.alt(P.string('space'), P.string('newline'), P.oneOf(' '), P.letter, P.digit)
+                            .map((value) => {
+                               if (value === 'space') {
+                                  return { type: 'character', value: ' ' };
+                               } else if (value === 'newline') {
+                                  return { type: 'character', value: '\n' };
+                               } else {
+                                  return { type: 'character', value: value };
+                               }
+                            }));
 
    var parseAtom = P.seqMap(P.alt(P.letter, symbol),
                             P.alt(P.letter, P.digit, symbol).many(),
@@ -80,9 +95,33 @@
                         return { type: 'number', value: value };
                       });
                
-   var parseExpr = P.alt(parseAtom,
-                         parseString,
-                         parseNumber);
+   var parseExpr = P.lazy(() => {
+      return P.alt(parseCharacter,
+                   parseAtom,
+                   parseString,
+                   parseNumber,
+                   parseQuoted,
+                   P.oneOf('(')
+                    .then(P.alt(parseDottedList, parseList))
+                    .skip(P.oneOf(')')));
+   });
+
+   var parseList = P.sepBy(parseExpr, spaces)
+                    .map((value) => {
+                       return { type: 'list', value: value };
+                    });
+
+   var parseDottedList = P.seqMap(P.sepBy(parseExpr, spaces).skip(spaces),
+                                  P.seq(P.oneOf('.'), spaces).then(parseExpr),
+                                  (head, tail) => {
+                                     return { type: 'dottedlist', value: head.concat(tail) };
+                                  });
+
+   var parseQuoted = P.oneOf("'")
+                      .then(
+                         parseExpr.map((result) => {
+                            return { type: 'list', value: [{ type: 'atom', value: 'quote'}, result] };
+                         }));
 
    // Main --------------------------------------------------------------------
    var parse = function(string) {
