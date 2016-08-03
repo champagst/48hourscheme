@@ -38,6 +38,78 @@
       return result;
    };
 
+   var unannotate = function(array) {
+      return array.map(x => { return x.toString(); }).join(' ');
+   };
+
+   // Types -------------------------------------------------------------------
+   var LString = function(contents) {
+      this.value = contents;
+
+      this.toString = function() {
+         return '"' + this.value + '"';
+      };
+   };
+
+   var Atom = function(name) {
+      this.value = name;
+
+      this.toString = function() {
+         return this.value;
+      };
+   };
+
+   var LNumber = function(contents) {
+      this.value = contents;
+
+      this.toString = function() {
+         return this.value.toString();
+      };
+   };
+
+   var Character = function(contents) {
+      this.value = contents;
+
+      this.toString = function() {
+         if (this.value === ' ') {
+            return '#\\space';
+         } else if (this.value === '\n') {
+            return '#\\newline';
+         } else {
+            return '#\\' + this.value;
+         }
+      };
+   };
+
+   var Bool = function(contents) {
+      this.value = contents;
+
+      this.toString = function() {
+         if (this.value === true) {
+            return '#t';
+         } else if (this.value === false) {
+            return '#f';
+         }
+      };
+   };
+
+   var List = function(array) {
+      this.value = array;
+
+      this.toString = function() {
+         return '(' + unannotate(this.value) + ')';
+      };
+   };
+
+   var DottedList = function(head, tail) {
+      this.head = head;
+      this.tail = tail;
+
+      this.toString = function() {
+         return '(' + unannotate(this.head) + ' . ' + this.tail.toString() + ')';
+      };
+   };
+
    // Parsers -----------------------------------------------------------------
    var symbol = P.oneOf('!#$%&|*+-/:<=>?@^_~');
 
@@ -53,7 +125,7 @@
                              value = cat(result);
                              value = replace_escaped(value);
 
-                             return { type: 'string', value: value }; 
+                             return new LString(value);
                           }))
                       .skip(P.oneOf('"'));
 
@@ -62,11 +134,11 @@
                            P.alt(P.string('space'), P.string('newline'), P.oneOf(' '), P.letter, P.digit)
                             .map((value) => {
                                if (value === 'space') {
-                                  return { type: 'character', value: ' ' };
+                                  return new Character(' ');
                                } else if (value === 'newline') {
-                                  return { type: 'character', value: '\n' };
+                                  return new Character('\n');
                                } else {
-                                  return { type: 'character', value: value };
+                                  return new Character(value);
                                }
                             }));
 
@@ -76,11 +148,11 @@
                                var atom = first + cat(rest);
 
                                if (atom === '#t') {
-                                  return { type: 'bool', value: true };
+                                  return new Bool(true);
                                } else if (atom === '#f') {
-                                  return { type: 'bool', value: false };
+                                  return new Bool(false);
                                } else {
-                                  return { type: 'atom', value: atom };
+                                  return new Atom(atom);
                                }
                             });
 
@@ -92,7 +164,7 @@
                          value = cat(result);
                          value = parseInt(value);
 
-                        return { type: 'number', value: value };
+                         return new LNumber(value);
                       });
                
    var parseExpr = P.lazy(() => {
@@ -108,19 +180,19 @@
 
    var parseList = P.sepBy(parseExpr, spaces)
                     .map((value) => {
-                       return { type: 'list', value: value };
+                       return new List(value);
                     });
 
    var parseDottedList = P.seqMap(P.sepBy(parseExpr, spaces).skip(spaces),
                                   P.seq(P.oneOf('.'), spaces).then(parseExpr),
                                   (head, tail) => {
-                                     return { type: 'dottedlist', value: head.concat(tail) };
+                                     return new DottedList(head, tail);
                                   });
 
    var parseQuoted = P.oneOf("'")
                       .then(
-                         parseExpr.map((result) => {
-                            return { type: 'list', value: [{ type: 'atom', value: 'quote'}, result] };
+                         parseExpr.map((value) => {
+                            return new List([new Atom('quote')].concat(value)); 
                          }));
 
    // Main --------------------------------------------------------------------
@@ -133,7 +205,7 @@
          fail(P.formatError(string, result));
       }
    }
-
+   
    exports.scheme = {
       parse: parse
    };
