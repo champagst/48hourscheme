@@ -2,6 +2,42 @@
    // Dependencies ------------------------------------------------------------
    var P = require('parsimmon');
 
+   // Exceptions --------------------------------------------------------------
+   var NotFunction = function(message, func) {
+      return {
+         name: 'NotFunction',
+         message: message + ': ' + func
+      };
+   };
+
+   var BadSpecialForm = function(message, form) {
+      return {
+         name: 'BadSpecialForm',
+         message: message + ': ' + form
+      };
+   };
+
+   var Parser = function(parseErr) {
+      return {
+         name: 'Parser',
+         message: 'Parse error at ' + parseErr
+      };
+   };
+
+   var TypeMismatch = function(expected, found) {
+      return {
+         name: 'TypeMismatch',
+         message: 'Invalid type: expected ' + expected + ', found ' + found
+      };
+   };
+
+   var NumArgs = function(expected, found) {
+      return {
+         name: 'NumArgs',
+         message: 'Expected ' + expected + ' args; found values ' + unannotate(found)
+      };
+   };
+
    // Helpers -----------------------------------------------------------------
    var _ = {
       head: function(array) {
@@ -57,30 +93,21 @@
          var parsed = parseInt(n.value);
 
          if (isNaN(parsed)) {
-            throw {
-               name: 'TypeMismatch',
-               message: 'Invalid type: expected number, found ' + n.value
-            };
+            throw TypeMismatch('number', n);
          }
 
          return parsed;
       } else if (n instanceof List) {
          return unpack_num(n.head());
       } else {
-         throw {
-            name: 'TypeMismatch',
-            message: 'Invalid type: expected number, found ' + n
-         };
+         throw TypeMismatch('number', n);
       }
    };
 
    var numeric_binop = function(fn) {
       return function(args) {
          if (args.length < 2) {
-            throw {
-               name: 'NumArgs',
-               message: 'Expected 2 args; found values ' + args
-            };
+            throw NumArgs(2, args);
          }
 
          return new LNumber(args.map(unpack_num).reduce(fn));
@@ -89,10 +116,10 @@
 
    // Primitives --------------------------------------------------------------
    var primitives = {
-      '+':   numeric_binop((a, b) => { return a + b; }),
-      '-':   numeric_binop((a, b) => { return a - b; }),
-      '*':   numeric_binop((a, b) => { return a * b; }),
-      '/':   numeric_binop((a, b) => { return a / b; }),
+      '+': numeric_binop((a, b) => { return a + b; }),
+      '-': numeric_binop((a, b) => { return a - b; }),
+      '*': numeric_binop((a, b) => { return a * b; }),
+      '/': numeric_binop((a, b) => { return a / b; }),
       'mod': numeric_binop((a, b) => { return a % b; }),
       'quotient': numeric_binop((a, b) => { return Math.floor(a / b); })
    };
@@ -269,19 +296,13 @@
       if (result.status) {
          return result.value;
       } else {
-         throw {
-            name: 'ParseError',
-            message: P.formatError(string, result)
-         };
+         throw Parser(P.formatError(string, result));
       }
    }
    
    function apply(func, args) {
       if (!(func in primitives)) {
-         throw {
-            name: 'NotFunction',
-            message: 'Unrecognized primitive function args ' + func
-         };
+         throw NotFunction('Unrecognized primitive function args', func);
       }
 
       return primitives[func](args);
@@ -307,10 +328,7 @@
          }
       }
 
-      throw {
-         name: 'BadSpecialForm',
-         message: 'Unrecognized special form ' + form.toString()
-      };
+      throw BadSpecialForm('Unrecognized special form', form.toString());
    }
 
    exports.scheme = {
