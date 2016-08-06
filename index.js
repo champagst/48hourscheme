@@ -104,6 +104,26 @@
       }
    };
 
+   var unpack_str = function(s) {
+      if (s instanceof LString) {
+         return s.value;
+      } else if (s instanceof LNumber) {
+         return s.toString();
+      } else if (s instanceof Bool) {
+         return s.toString();
+      } else {
+         throw TypeMismatch('string', s);
+      }
+   };
+
+   var unpack_bool = function(b) {
+      if (b instanceof b) {
+         return b;
+      } else {
+         throw TypeMismatch('boolean', b);
+      }
+   };
+
    var numeric_binop = function(fn) {
       return function(args) {
          if (args.length < 2) {
@@ -114,6 +134,31 @@
       };
    };
 
+   var bool_binop = function(unpacker, fn) {
+      return function(args) {
+         if (args.length != 2) {
+            throw NumArgs(2, args);
+         } else {
+            var left = unpacker(_.head(args)),
+                right = unpacker(_.last(args));
+
+            return new Bool(fn(left, right));                 
+         }
+      };
+   };
+
+   var num_bool_binop = function(fn) {
+      return bool_binop(unpack_num, fn);
+   };
+
+   var str_bool_binop = function(fn) {
+      return bool_binop(unpack_str, fn);
+   };
+
+   var bool_bool_binop = function(fn) {
+      return bool_binop(unpack_bool, fn);
+   };
+
    // Primitives --------------------------------------------------------------
    var primitives = {
       '+': numeric_binop((a, b) => { return a + b; }),
@@ -121,7 +166,20 @@
       '*': numeric_binop((a, b) => { return a * b; }),
       '/': numeric_binop((a, b) => { return a / b; }),
       'mod': numeric_binop((a, b) => { return a % b; }),
-      'quotient': numeric_binop((a, b) => { return Math.floor(a / b); })
+      'quotient': numeric_binop((a, b) => { return Math.floor(a / b); }),
+      '=': num_bool_binop((a, b) => { return a === b; }),
+      '<': num_bool_binop((a, b) => { return a < b; }),
+      '>': num_bool_binop((a, b) => { return a > b; }),
+      '/=': num_bool_binop((a, b) => { return a !== b; }),
+      '>=': num_bool_binop((a, b) => { return a >= b; }),
+      '<=': num_bool_binop((a, b) => { return a <= b; }),
+      '&&': bool_bool_binop((a, b) => { return a && b; }),
+      '||': bool_bool_binop((a, b) => { return a || b; }),
+      'string=?': str_bool_binop((a, b) => { return a === b; }),
+      'string<?': str_bool_binop((a, b) => { return a < b; }),
+      'string>?': str_bool_binop((a, b) => { return a > b; }),
+      'string<=?': str_bool_binop((a, b) => { return a <= b; }),
+      'string>=?': str_bool_binop((a, b) => { return a >= b; })
    };
 
    // Types -------------------------------------------------------------------
