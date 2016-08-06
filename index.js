@@ -3,6 +3,15 @@
    var P = require('parsimmon');
 
    // Helpers -----------------------------------------------------------------
+   var _ = {
+      head: function(array) {
+         return array[0];
+      },
+      tail: function(array) {
+         return array.slice(1);
+      }
+   };
+
    function fail(string) {
       throw new Error(string);
    }
@@ -40,6 +49,23 @@
 
    var unannotate = function(array) {
       return array.map(x => { return x.toString(); }).join(' ');
+   };
+
+   var numeric_binop = function(fn) {
+      return function(args) {
+         var params = args.map(x => { return x.value; });
+         return new LNumber(params.reduce(fn));
+      };
+   };
+
+   // Primitives --------------------------------------------------------------
+   var primitives = {
+      '+':   numeric_binop((a, b) => { return a + b; }),
+      '-':   numeric_binop((a, b) => { return a - b; }),
+      '*':   numeric_binop((a, b) => { return a * b; }),
+      '/':   numeric_binop((a, b) => { return a / b; }),
+      'mod': numeric_binop((a, b) => { return a % b; }),
+      'quotient': numeric_binop((a, b) => { return Math.floor(a / b); })
    };
 
    // Types -------------------------------------------------------------------
@@ -98,6 +124,14 @@
 
       this.toString = function() {
          return '(' + unannotate(this.value) + ')';
+      };
+
+      this.head = function() {
+         return _.head(this.value);
+      };
+
+      this.tail = function() {
+         return _.tail(this.value);
       };
    };
 
@@ -196,7 +230,7 @@
                          }));
 
    // Main --------------------------------------------------------------------
-   var parse = function(string) {
+   function parse(string) {
       var result = parseExpr.parse(string);
 
       if (result.status) {
@@ -206,6 +240,24 @@
       }
    }
    
+   function apply(func, args) {
+      return primitives[func](args);
+   }
+
+   function eval_form(form) {
+      if (form instanceof LString ||
+          form instanceof LNumber ||
+          form instanceof Bool ||
+          form instanceof Character) {
+         return form;
+      } else if (form instanceof List) {
+         var func = form.head().value,
+             args = form.tail().map(eval_form);
+
+         return apply(func, args);
+      }
+   }
+
    exports.scheme = {
       parse: parse
    };
