@@ -9,12 +9,11 @@
       },
       tail: function(array) {
          return array.slice(1);
+      },
+      last: function(array) {
+         return array[array.length - 1];
       }
    };
-
-   function fail(string) {
-      throw new Error(string);
-   }
 
    var cat = function (array) {
       return array.join('');
@@ -51,10 +50,40 @@
       return array.map(x => { return x.toString(); }).join(' ');
    };
 
+   var unpack_num = function(n) {
+      if (n instanceof LNumber) {
+         return n.value;
+      } else if (n instanceof LString) {
+         var parsed = parseInt(n.value);
+
+         if (isNaN(parsed)) {
+            throw {
+               name: 'TypeMismatch',
+               message: 'Invalid type: expected number, found ' + n.value
+            };
+         }
+
+         return parsed;
+      } else if (n instanceof List) {
+         return unpack_num(n.head());
+      } else {
+         throw {
+            name: 'TypeMismatch',
+            message: 'Invalid type: expected number, found ' + n
+         };
+      }
+   };
+
    var numeric_binop = function(fn) {
       return function(args) {
-         var params = args.map(x => { return x.value; });
-         return new LNumber(params.reduce(fn));
+         if (args.length < 2) {
+            throw {
+               name: 'NumArgs',
+               message: 'Expected 2 args; found values ' + args
+            };
+         }
+
+         return new LNumber(args.map(unpack_num).reduce(fn));
       };
    };
 
@@ -132,6 +161,10 @@
 
       this.tail = function() {
          return _.tail(this.value);
+      };
+
+      this.last = function() {
+         return _.last(this.value);
       };
    };
 
@@ -236,11 +269,21 @@
       if (result.status) {
          return result.value;
       } else {
-         fail(P.formatError(string, result));
+         throw {
+            name: 'ParseError',
+            message: P.formatError(string, result)
+         };
       }
    }
    
    function apply(func, args) {
+      if (!(func in primitives)) {
+         throw {
+            name: 'NotFunction',
+            message: 'Unrecognized primitive function args ' + func
+         };
+      }
+
       return primitives[func](args);
    }
 
@@ -251,11 +294,23 @@
           form instanceof Character) {
          return form;
       } else if (form instanceof List) {
-         var func = form.head().value,
-             args = form.tail().map(eval_form);
+         var head = form.head();
 
-         return apply(func, args);
+         if (head instanceof Atom) {
+            if (head.value === 'quote') {
+               return form.last();
+            }
+
+            var args = form.tail().map(eval_form);
+
+            return apply(head, args);
+         }
       }
+
+      throw {
+         name: 'BadSpecialForm',
+         message: 'Unrecognized special form ' + form.toString()
+      };
    }
 
    exports.scheme = {
