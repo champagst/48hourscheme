@@ -117,7 +117,7 @@
    };
 
    var unpack_bool = function(b) {
-      if (b instanceof b) {
+      if (b instanceof Bool) {
          return b;
       } else {
          throw TypeMismatch('boolean', b);
@@ -139,8 +139,9 @@
          if (args.length != 2) {
             throw NumArgs(2, args);
          } else {
-            var left = unpacker(_.head(args)),
-                right = unpacker(_.last(args));
+            args = args.map(unpacker);
+            left = _.head(args);
+            right = _.last(args);
 
             return new Bool(fn(left, right));                 
          }
@@ -372,21 +373,24 @@
           form instanceof Bool ||
           form instanceof Character) {
          return form;
-      } else if (form instanceof List) {
-         var head = form.head();
+      }
 
-         if (head instanceof Atom) {
-            if (head.value === 'quote') {
-               return form.last();
-            }
+      if (form instanceof List) {
+         var atom = form.head();
 
-            var args = form.tail().map(eval_form);
-
-            return apply(head, args);
+         if (atom instanceof Atom && atom.value === 'quote') {
+            return form.last();
          }
       }
 
-      throw BadSpecialForm('Unrecognized special form', form.toString());
+      if (form instanceof List) {
+         var func = form.head(),
+             args = form.tail().map(eval_form);
+
+         return apply(func, args);
+      }
+
+      throw BadSpecialForm('Unrecognized special form', form);
    }
 
    exports.scheme = {
