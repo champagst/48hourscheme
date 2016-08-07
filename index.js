@@ -384,6 +384,25 @@
       }
 
       if (form instanceof List) {
+         var atom = form.head(),
+             args = form.tail();
+
+         if (atom instanceof Atom && atom.value === 'if' &&
+             args.length === 3) {
+            var pred = args[0],
+                conseq = args[1],
+                alt = args[2],
+                result = eval_form(pred).value;
+
+            if (result === false) {
+               return eval_form(alt);
+            } else {
+               return eval_form(conseq);
+            }
+         }
+      }
+
+      if (form instanceof List) {
          var func = form.head(),
              args = form.tail().map(eval_form);
 
