@@ -43,6 +43,9 @@
       head: function(array) {
          return array[0];
       },
+      init: function(array) {
+         return array.slice(0, -1);
+      },
       tail: function(array) {
          return array.slice(1);
       },
@@ -160,6 +163,67 @@
       return bool_binop(unpack_bool, fn);
    };
 
+   var car = function(args) {
+      if (args.length === 1) {
+         var form = _.head(args);
+
+         if (form instanceof List) {
+            return form.head();
+         }
+
+         if (form instanceof DottedList) {
+            return form.head();
+         }
+
+         throw TypeMismatch('pair', form);
+      }
+
+      throw NumArgs(1, args);
+   };
+
+   var cdr = function(args) {
+      if (args.length === 1) {
+         var form = _.head(args);
+
+         if (form instanceof List) {
+            return new List(form.tail());
+         }
+
+         if (form instanceof DottedList) {
+            var init = form.init(),
+                last = form.last();
+
+            if (init.length === 1) {
+               return last;
+            } else {
+               return new DottedList(_.tail(init), last);
+            }
+         }
+
+         throw TypeMismatch('pair', form);
+      }
+
+      throw NumArgs(1, args);
+   };
+
+   var cons = function(args) {
+      if (args.length === 2) {
+         var form = _.last(args);         
+
+         if (form instanceof List) {
+            return new List(_.init(args).concat(form.value));
+         }
+
+         if (form instanceof DottedList) {
+            return new DottedList(_.init(args).concat(form.init()), form.last());
+         }
+
+         return new DottedList(_.init(args), _.last(args));
+      }
+
+      throw NumArgs(2, args);
+   };
+
    // Primitives --------------------------------------------------------------
    var primitives = {
       '+': numeric_binop((a, b) => { return a + b; }),
@@ -180,7 +244,10 @@
       'string<?': str_bool_binop((a, b) => { return a < b; }),
       'string>?': str_bool_binop((a, b) => { return a > b; }),
       'string<=?': str_bool_binop((a, b) => { return a <= b; }),
-      'string>=?': str_bool_binop((a, b) => { return a >= b; })
+      'string>=?': str_bool_binop((a, b) => { return a >= b; }),
+      'car': car,
+      'cdr': cdr,
+      'cons': cons
    };
 
    // Types -------------------------------------------------------------------
@@ -254,12 +321,24 @@
       };
    };
 
-   var DottedList = function(head, tail) {
-      this.head = head;
-      this.tail = tail;
+   var DottedList = function(init, last) {
+      this._init = init;
+      this._last = last;
 
       this.toString = function() {
-         return '(' + unannotate(this.head) + ' . ' + this.tail.toString() + ')';
+         return '(' + unannotate(this._init) + ' . ' + this._last.toString() + ')';
+      };
+
+      this.head = function() {
+         return _.head(this._init);
+      };
+
+      this.init = function() {
+         return this._init;
+      };
+
+      this.last = function() {
+         return this._last;
       };
    };
 
@@ -338,8 +417,8 @@
 
    var parseDottedList = P.seqMap(P.sepBy(parseExpr, spaces).skip(spaces),
                                   P.seq(P.oneOf('.'), spaces).then(parseExpr),
-                                  (head, tail) => {
-                                     return new DottedList(head, tail);
+                                  (init, last) => {
+                                     return new DottedList(init, last);
                                   });
 
    var parseQuoted = P.oneOf("'")
