@@ -1,6 +1,7 @@
 ;(function(exports) {
    // Dependencies ------------------------------------------------------------
-   var P = require('parsimmon');
+   var P = require('parsimmon'),
+       _ = require('lodash');
 
    // Exceptions --------------------------------------------------------------
    var NotFunction = function(message, func) {
@@ -39,21 +40,6 @@
    };
 
    // Helpers -----------------------------------------------------------------
-   var _ = {
-      head: function(array) {
-         return array[0];
-      },
-      init: function(array) {
-         return array.slice(0, -1);
-      },
-      tail: function(array) {
-         return array.slice(1);
-      },
-      last: function(array) {
-         return array[array.length - 1];
-      }
-   };
-
    var cat = function (array) {
       return array.join('');
    };
@@ -95,16 +81,14 @@
       } else if (n instanceof LString) {
          var parsed = parseInt(n.value);
 
-         if (isNaN(parsed)) {
-            throw TypeMismatch('number', n);
+         if (!isNaN(parsed)) {
+            return parsed;
          }
-
-         return parsed;
       } else if (n instanceof List) {
          return unpack_num(n.head());
-      } else {
-         throw TypeMismatch('number', n);
       }
+
+      throw TypeMismatch('number', n);
    };
 
    var unpack_str = function(s) {
@@ -129,24 +113,26 @@
 
    var numeric_binop = function(fn) {
       return function(args) {
-         if (args.length < 2) {
+         if (args.length >= 2) {
+            return new LNumber(args.map(unpack_num).reduce(fn));
+         } else {
             throw NumArgs(2, args);
          }
-
-         return new LNumber(args.map(unpack_num).reduce(fn));
       };
    };
 
    var bool_binop = function(unpacker, fn) {
       return function(args) {
-         if (args.length != 2) {
-            throw NumArgs(2, args);
-         } else {
+         if (args.length === 2) {
+            var left, right;
+
             args = args.map(unpacker);
-            left = _.head(args);
+            left = _.head(args),
             right = _.last(args);
 
-            return new Bool(fn(left, right));                 
+            return new Bool(fn(left, right));
+         } else {
+            throw NumArgs(2, args);
          }
       };
    };
@@ -169,16 +155,14 @@
 
          if (form instanceof List) {
             return form.head();
-         }
-
-         if (form instanceof DottedList) {
+         } else if (form instanceof DottedList) {
             return form.head();
+         } else {
+            throw TypeMismatch('pair', form);
          }
-
-         throw TypeMismatch('pair', form);
+      } else {
+         throw NumArgs(1, args);
       }
-
-      throw NumArgs(1, args);
    };
 
    var cdr = function(args) {
@@ -187,9 +171,7 @@
 
          if (form instanceof List) {
             return new List(form.tail());
-         }
-
-         if (form instanceof DottedList) {
+         } else if (form instanceof DottedList) {
             var init = form.init(),
                 last = form.last();
 
@@ -198,12 +180,12 @@
             } else {
                return new DottedList(_.tail(init), last);
             }
+         } else {
+            throw TypeMismatch('pair', form);
          }
-
-         throw TypeMismatch('pair', form);
+      } else {
+         throw NumArgs(1, args);
       }
-
-      throw NumArgs(1, args);
    };
 
    var cons = function(args) {
@@ -211,17 +193,47 @@
          var form = _.last(args);         
 
          if (form instanceof List) {
-            return new List(_.init(args).concat(form.value));
+            return new List(_.initial(args).concat(form.value));
+         } else if (form instanceof DottedList) {
+            return new DottedList(_.initial(args).concat(form.initial()), form.last());
+         } else {
+            return new DottedList(_.initial(args), _.last(args));
          }
-
-         if (form instanceof DottedList) {
-            return new DottedList(_.init(args).concat(form.init()), form.last());
-         }
-
-         return new DottedList(_.init(args), _.last(args));
+      } else {
+         throw NumArgs(2, args);
       }
+   };
 
-      throw NumArgs(2, args);
+   var eqv = function(args) {
+      if (args.length === 2) {
+         var args1 = _.head(args),
+             args2 = _.last(args);
+
+         if (args1 instanceof Bool && args2 instanceof Bool) {
+            return new Bool(args1.value === args2.value);
+         } else if (args1 instanceof LNumber && args2 instanceof LNumber) {
+            return new Bool(args1.value === args2.value);
+         } else if (args1 instanceof Character && args2 instanceof Character) { 
+            return new Bool(args1.value === args2.value);
+         } else if (args1 instanceof LString && args2 instanceof LString) {
+            return new Bool(args1.value === args2.value);
+         } else if (args1 instanceof Atom && args2 instanceof Atom) {
+            return new Bool(args1.value === args2.value);
+         } else if (args1 instanceof DottedList && args2 instanceof DottedList) {
+            return eqv([new List(args1.init().concat(args1.last())), new List(args2.init().concat(args2.last()))]);
+         } else if (args1 instanceof List && args2 instanceof List) {
+            var l1 = args1.value,
+                l2 = args2.value;
+
+            return new Bool(_.every(_.zip(l1, l2), (x1, x2) => {
+                                    return eqv(x1, x2).value;
+                                    }));
+         } else {
+            return new Bool(false);            
+         }
+      } else {
+         throw NumArgs(2, args);
+      }
    };
 
    // Primitives --------------------------------------------------------------
@@ -247,7 +259,9 @@
       'string>=?': str_bool_binop((a, b) => { return a >= b; }),
       'car': car,
       'cdr': cdr,
-      'cons': cons
+      'cons': cons,
+      'eq?': eqv,
+      'eqv?': eqv
    };
 
    // Types -------------------------------------------------------------------
@@ -439,11 +453,11 @@
    }
    
    function apply(func, args) {
-      if (!(func in primitives)) {
+      if (func in primitives) {
+         return primitives[func](args);
+      } else {
          throw NotFunction('Unrecognized primitive function args', func);
       }
-
-      return primitives[func](args);
    }
 
    function eval_form(form) {
@@ -452,32 +466,26 @@
           form instanceof Bool ||
           form instanceof Character) {
          return form;
-      }
-
+      } 
+      
       if (form instanceof List) {
          var atom = form.head();
 
          if (atom instanceof Atom && atom.value === 'quote') {
             return form.last();
          }
-      }
-
+      } 
+      
       if (form instanceof List) {
          var atom = form.head(),
              args = form.tail();
 
-         if (atom instanceof Atom && atom.value === 'if' &&
-             args.length === 3) {
+         if (atom instanceof Atom && atom.value === 'if' && args.length === 3) {
             var pred = args[0],
                 conseq = args[1],
-                alt = args[2],
-                result = eval_form(pred).value;
+                alt = args[2];
 
-            if (result === false) {
-               return eval_form(alt);
-            } else {
-               return eval_form(conseq);
-            }
+            return eval_form(eval_form(pred).value ? conseq : alt);
          }
       }
 
