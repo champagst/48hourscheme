@@ -294,6 +294,14 @@
       'equal?': equal
    };
 
+   var apply = function(func, args) {
+      if (func in primitives) {
+         return primitives[func](args);
+      } else {
+         throw NotFunction('Unrecognized primitive function args', func);
+      }
+   }
+
    // Types -------------------------------------------------------------------
    var LString = function(contents) {
       this.value = contents;
@@ -386,7 +394,7 @@
       };
    };
 
-   // Parsers -----------------------------------------------------------------
+   // Parsing -----------------------------------------------------------------
    var symbol = P.oneOf('!#$%&|*+-/:<=>?@^_~');
 
    var spaces = P.whitespace.atLeast(1)
@@ -471,41 +479,7 @@
                             return new List([new Atom('quote')].concat(value)); 
                          }));
 
-   // REPL --------------------------------------------------------------------
-   var eval_string = function(expr) {
-      try {
-         return eval_form(parse(expr)).toString();
-      } catch(e) {
-         return e.message;
-      }
-   };
-
-   var eval_and_print = function(expr) {
-      console.log(eval_string(expr));
-   };
-
-   var run_repl = function() {
-      var rl = R.createInterface({
-          input: process.stdin,
-          output: process.stdout
-      });
-
-      rl.prompt();
-
-      rl.on('line', (line) => {
-         if (line === 'quit') {
-            rl.close();
-         } else {
-            eval_and_print(line);
-            rl.prompt();
-         }
-      }).on('close', () => {
-         process.exit(0);
-      });
-   };
-
-   // Main --------------------------------------------------------------------
-   function parse(string) {
+   var parse = function(string) {
       var result = parseExpr.parse(string);
 
       if (result.status) {
@@ -515,15 +489,8 @@
       }
    }
    
-   function apply(func, args) {
-      if (func in primitives) {
-         return primitives[func](args);
-      } else {
-         throw NotFunction('Unrecognized primitive function args', func);
-      }
-   }
-
-   function eval_form(form) {
+   // Evaluation --------------------------------------------------------------
+   var eval_form = function(form) {
       if (form instanceof LString ||
           form instanceof LNumber ||
           form instanceof Bool ||
@@ -562,13 +529,52 @@
       throw BadSpecialForm('Unrecognized special form', form);
    }
 
-   if (process.argv.length === 2) {
-      run_repl();
-   } else if (process.argv.length === 3) {
-      eval_and_print(process.argv[2]);
-   } else {
-      console.log('Program takes only 0 or 1 argument');
-   }
+   var eval_string = function(expr) {
+      try {
+         return eval_form(parse(expr)).toString();
+      } catch(e) {
+         return e.message;
+      }
+   };
+
+   var eval_and_print = function(expr) {
+      console.log(eval_string(expr));
+   };
+
+   // REPL --------------------------------------------------------------------
+   var run_repl = function() {
+      var rl = R.createInterface({
+          input: process.stdin,
+          output: process.stdout
+      });
+
+      rl.prompt();
+
+      rl.on('line', (line) => {
+         if (line === 'quit') {
+            rl.close();
+            return;
+         }
+
+         eval_and_print(line);
+         rl.prompt();
+      }).on('close', () => {
+         process.exit(0);
+      });
+   };
+
+   // Main --------------------------------------------------------------------
+   var main = function() {
+      if (process.argv.length === 2) {
+         run_repl();
+      } else if (process.argv.length === 3) {
+         eval_and_print(process.argv[2]);
+      } else {
+         console.log('Program takes only 0 or 1 argument');
+      }
+   };
+
+   main();
 
    exports.scheme = {
       parse: parse
