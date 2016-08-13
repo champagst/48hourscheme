@@ -1,6 +1,7 @@
 ;(function(exports) {
    // Dependencies ------------------------------------------------------------
-   var P = require('parsimmon'),
+   var R = require('readline'),
+       P = require('parsimmon'),
        _ = require('lodash');
 
    // Exceptions --------------------------------------------------------------
@@ -470,6 +471,39 @@
                             return new List([new Atom('quote')].concat(value)); 
                          }));
 
+   // REPL --------------------------------------------------------------------
+   var eval_string = function(expr) {
+      try {
+         return eval_form(parse(expr)).toString();
+      } catch(e) {
+         return e.message;
+      }
+   };
+
+   var eval_and_print = function(expr) {
+      console.log(eval_string(expr));
+   };
+
+   var run_repl = function() {
+      var rl = R.createInterface({
+          input: process.stdin,
+          output: process.stdout
+      });
+
+      rl.prompt();
+
+      rl.on('line', (line) => {
+         if (line === 'quit') {
+            rl.close();
+         } else {
+            eval_and_print(line);
+            rl.prompt();
+         }
+      }).on('close', () => {
+         process.exit(0);
+      });
+   };
+
    // Main --------------------------------------------------------------------
    function parse(string) {
       var result = parseExpr.parse(string);
@@ -526,6 +560,14 @@
       }
 
       throw BadSpecialForm('Unrecognized special form', form);
+   }
+
+   if (process.argv.length === 2) {
+      run_repl();
+   } else if (process.argv.length === 3) {
+      eval_and_print(process.argv[2]);
+   } else {
+      console.log('Program takes only 0 or 1 argument');
    }
 
    exports.scheme = {
