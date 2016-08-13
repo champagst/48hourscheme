@@ -75,6 +75,20 @@
       return array.map(x => { return x.toString(); }).join(' ');
    };
 
+   var unpack_equals = function(arg1, arg2) {
+      return function(unpacker) {
+         try {
+            var unpacked1 = unpacker(arg1),
+                unpacked2 = unpacker(arg2);
+
+            return unpacked1 === unpacked2;
+         } catch (e) {
+            return false;
+         }
+      };
+   };
+
+   // Unpackers ---------------------------------------------------------------
    var unpack_num = function(n) {
       if (n instanceof LNumber) {
          return n.value;
@@ -111,6 +125,7 @@
       }
    };
 
+   // Binary Operators --------------------------------------------------------
    var numeric_binop = function(fn) {
       return function(args) {
          if (args.length >= 2) {
@@ -149,6 +164,7 @@
       return bool_binop(unpack_bool, fn);
    };
 
+   // List Primitives ---------------------------------------------------------
    var car = function(args) {
       if (args.length === 1) {
          var form = _.head(args);
@@ -236,6 +252,18 @@
       }
    };
 
+   var equal = function(args) {
+      if (args.length === 2) {
+         var unpackers = [unpack_num, unpack_str, unpack_bool],
+             primitive_equals = _.some(_.map(unpackers, unpack_equals(...args))),
+             eqv_equals = eqv(args);
+
+         return new Bool(primitive_equals || eqv_equals.value);
+      } else {
+         throw NumArgs(2, args);
+      }
+   };
+
    // Primitives --------------------------------------------------------------
    var primitives = {
       '+': numeric_binop((a, b) => { return a + b; }),
@@ -261,7 +289,8 @@
       'cdr': cdr,
       'cons': cons,
       'eq?': eqv,
-      'eqv?': eqv
+      'eqv?': eqv,
+      'equal?': equal
    };
 
    // Types -------------------------------------------------------------------
