@@ -40,6 +40,13 @@
       };
    };
 
+   var UnboundVar = function(message, varname) {
+      return {
+         name: 'UnboundVar',
+         message: message + ': ' + varname
+      };
+   };
+
    // Helpers -----------------------------------------------------------------
    var cat = function (array) {
       return array.join('');
@@ -490,13 +497,17 @@
    }
    
    // Evaluation --------------------------------------------------------------
-   var eval_form = function(form) {
+   var eval_form = function(env, form) {
       if (form instanceof LString ||
           form instanceof LNumber ||
           form instanceof Bool ||
           form instanceof Character) {
          return form;
       } 
+
+      if (form instanceof Atom) {
+         return get_variable(env, form.value);
+      }
       
       if (form instanceof List) {
          var atom = form.head();
@@ -515,13 +526,41 @@
                 conseq = args[1],
                 alt = args[2];
 
-            return eval_form(eval_form(pred).value ? conseq : alt);
+            return eval_form(env, eval_form(env, pred).value ? conseq : alt);
+         }
+      }
+
+      if (form instanceof List) {
+         var atom = form.head(),
+             args = form.tail();
+
+         if (atom instanceof Atom && atom.value === 'set!') {
+            var variable = args[0],
+                value_form = args[1];
+
+            if (variable instanceof Atom) {
+               return set_variable(env, variable, eval_form(env, value_form));
+            }
+         }
+      }
+
+      if (form instanceof List) {
+         var atom = form.head(),
+             args = form.tail();
+
+         if (atom instanceof Atom && atom.value === 'define') {
+            var variable = args[0],
+                value_form = args[1];
+
+            if (variable instanceof Atom) {
+               return define_variable(env, variable, eval_form(env, value_form));
+            }
          }
       }
 
       if (form instanceof List) {
          var func = form.head(),
-             args = form.tail().map(eval_form);
+             args = form.tail().map(x => eval_form(env, x));
 
          return apply(func, args);
       }
@@ -529,24 +568,57 @@
       throw BadSpecialForm('Unrecognized special form', form);
    }
 
-   var eval_string = function(expr) {
+   var eval_string = function(env, expr) {
       try {
-         return eval_form(parse(expr)).toString();
+         return eval_form(env, parse(expr)).toString();
       } catch(e) {
          return e.message;
       }
    };
 
-   var eval_and_print = function(expr) {
-      console.log(eval_string(expr));
+   var eval_and_print = function(env, expr) {
+      console.log(eval_string(env, expr));
+   };
+
+   // Environment -------------------------------------------------------------
+   var get_variable = function(env, variable) {
+      if (variable in env) {
+         return env[variable];
+      } else {
+         throw UnboundVar('Getting an unbound variable', variable);
+      }
+   };
+
+   var set_variable = function(env, variable, value) {
+      if (variable in env) {
+         env[variable] = value;
+         return value;
+      } else {
+         throw UnboundVar('Setting an unbound variable', variable);
+      }
+   };
+
+   var define_variable = function(env, variable, value) {
+      if (variable in env) {
+         return set_variable(env, variable, value);
+      } else {
+         env[variable] = value;
+         return value;
+      }
    };
 
    // REPL --------------------------------------------------------------------
+   var run_one = function(expr) {
+      eval_and_print({}, expr);
+   };
+
    var run_repl = function() {
       var rl = R.createInterface({
           input: process.stdin,
           output: process.stdout
       });
+
+      var env = {};
 
       rl.prompt();
 
@@ -556,7 +628,7 @@
             return;
          }
 
-         eval_and_print(line);
+         eval_and_print(env, line);
          rl.prompt();
       }).on('close', () => {
          process.exit(0);
@@ -568,7 +640,7 @@
       if (process.argv.length === 2) {
          run_repl();
       } else if (process.argv.length === 3) {
-         eval_and_print(process.argv[2]);
+         run_one(process.argv[2]);
       } else {
          console.log('Program takes only 0 or 1 argument');
       }
