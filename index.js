@@ -5,10 +5,10 @@
        _ = require('lodash');
 
    // Exceptions --------------------------------------------------------------
-   var NotFunction = function(message, func) {
+   var NotFunction = function(message, fn) {
       return {
          name: 'NotFunction',
-         message: message + ': ' + func
+         message: message + ': ' + fn
       };
    };
 
@@ -83,11 +83,11 @@
       return array.map(x => { return x.toString(); }).join(' ');
    };
 
-   var unpack_equals = function(arg1, arg2) {
+   var unpack_equals = function(args) {
       return function(unpacker) {
          try {
-            var unpacked1 = unpacker(arg1),
-                unpacked2 = unpacker(arg2);
+            var unpacked1 = unpacker(args[0]),
+                unpacked2 = unpacker(args[1]);
 
             return unpacked1 === unpacked2;
          } catch (e) {
@@ -196,13 +196,13 @@
          if (form instanceof List) {
             return new List(form.tail());
          } else if (form instanceof DottedList) {
-            var init = form.init(),
+            var initial = form.initial(),
                 last = form.last();
 
-            if (init.length === 1) {
+            if (initial.length === 1) {
                return last;
             } else {
-               return new DottedList(_.tail(init), last);
+               return new DottedList(_.tail(initial), last);
             }
          } else {
             throw TypeMismatch('pair', form);
@@ -244,7 +244,7 @@
          } else if (args1 instanceof Atom && args2 instanceof Atom) {
             return new Bool(args1.value === args2.value);
          } else if (args1 instanceof DottedList && args2 instanceof DottedList) {
-            return eqv([new List(args1.init().concat(args1.last())), new List(args2.init().concat(args2.last()))]);
+            return eqv([new List(args1.initial().concat(args1.last())), new List(args2.initial().concat(args2.last()))]);
          } else if (args1 instanceof List && args2 instanceof List) {
             var l1 = args1.value,
                 l2 = args2.value;
@@ -263,7 +263,7 @@
    var equal = function(args) {
       if (args.length === 2) {
          var unpackers = [unpack_num, unpack_str, unpack_bool],
-             primitive_equals = _.some(_.map(unpackers, unpack_equals(...args))),
+             primitive_equals = _.some(_.map(unpackers, unpack_equals(args))),
              eqv_equals = eqv(args);
 
          return new Bool(primitive_equals || eqv_equals.value);
@@ -301,12 +301,8 @@
       'equal?': equal
    };
 
-   var apply = function(func, args) {
-      if (func in primitives) {
-         return primitives[func](args);
-      } else {
-         throw NotFunction('Unrecognized primitive function args', func);
-      }
+   var apply = function(fn, args) {
+      return fn.apply(args);
    }
 
    // Types -------------------------------------------------------------------
@@ -380,24 +376,36 @@
       };
    };
 
-   var DottedList = function(init, last) {
-      this._init = init;
+   var DottedList = function(initial, last) {
+      this._initial = initial;
       this._last = last;
 
       this.toString = function() {
-         return '(' + unannotate(this._init) + ' . ' + this._last.toString() + ')';
+         return '(' + unannotate(this._initial) + ' . ' + this._last.toString() + ')';
       };
 
       this.head = function() {
-         return _.head(this._init);
+         return _.head(this._initial);
       };
 
-      this.init = function() {
-         return this._init;
+      this.initial = function() {
+         return this._initial;
       };
 
       this.last = function() {
          return this._last;
+      };
+   };
+
+   var PrimitiveFunc = function(fn) {
+      this.fn = fn;
+
+      this.apply = function(args) {
+         return this.fn(args);
+      };
+
+      this.toString = function() {
+         return '<primitive>';
       };
    };
 
@@ -476,8 +484,8 @@
 
    var parseDottedList = P.seqMap(P.sepBy(parseExpr, spaces).skip(spaces),
                                   P.seq(P.oneOf('.'), spaces).then(parseExpr),
-                                  (init, last) => {
-                                     return new DottedList(init, last);
+                                  (initial, last) => {
+                                     return new DottedList(initial, last);
                                   });
 
    var parseQuoted = P.oneOf("'")
@@ -559,10 +567,11 @@
       }
 
       if (form instanceof List) {
-         var func = form.head(),
-             args = form.tail().map(x => eval_form(env, x));
+         var form = form.value.map(x => eval_form(env, x)),
+             fn = _.head(form),
+             args = _.tail(form);
 
-         return apply(func, args);
+         return apply(fn, args);
       }
 
       throw BadSpecialForm('Unrecognized special form', form);
@@ -607,9 +616,35 @@
       }
    };
 
+   var bind_vars = function(env, bindings) {
+      var new_env = {};
+
+      for (var prop in bindings) {
+         new_env[prop] = bindings[prop];
+      }
+
+      for (var prop in env) {
+         new_env[prop] = env[prop];
+      }
+
+      return new_env;
+   };
+
+   var primitive_bindings = function() {
+      var new_primitives = {};
+
+      for (var prop in primitives) {
+         new_primitives[prop] = new PrimitiveFunc(primitives[prop]);
+      }
+
+      return new_primitives;
+   };
+
    // REPL --------------------------------------------------------------------
    var run_one = function(expr) {
-      eval_and_print({}, expr);
+      var env = primitive_bindings();
+
+      eval_and_print(env, expr);
    };
 
    var run_repl = function() {
@@ -618,7 +653,7 @@
           output: process.stdout
       });
 
-      var env = {};
+      var env = primitive_bindings();
 
       rl.prompt();
 
