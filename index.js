@@ -96,6 +96,18 @@
       };
    };
 
+   var make_func = function(varargs, env, params, body) {
+      return new Func(params.map(x => x.toString()), varargs, body, env);
+   };
+
+   var make_normal_func = function(env, params, body) {
+      return make_func(undefined, env, params, body);
+   };
+
+   var make_var_args = function(varargs, env, params, body) {
+      return make_func(varargs.toString(), env, params, body);
+   };
+
    // Unpackers ---------------------------------------------------------------
    var unpack_num = function(n) {
       if (n instanceof LNumber) {
@@ -374,6 +386,14 @@
       this.last = function() {
          return _.last(this.value);
       };
+
+      this.get = function(idx) {
+         return this.value[idx];
+      };
+
+      this.length = function() {
+         return this.value.length;
+      };
    };
 
    var DottedList = function(initial, last) {
@@ -394,6 +414,40 @@
 
       this.last = function() {
          return this._last;
+      };
+   };
+
+   var Func = function(params, varargs, body, closure) {
+      this.params = params;
+      this.varargs = varargs;
+      this.body = body;
+      this.closure = closure;
+
+      this.apply = function(args) {
+         if (this.params.length != args.length && !this.varargs) {
+            throw NumArgs(this.params.length, args);
+         } else {
+            var locals = bind_vars(this.closure, _.zip(params, args)),
+                remaining_args = _.drop(args, this.params.length);
+
+            if (remaining_args.length) {
+               locals = bind_vars(locals, [this.varargs, new List(remaining_args)]);
+            }
+                             
+            return eval_form(locals, this.body);
+         }
+      };
+
+      this.toString = function() {
+         var result = '(lambda (' + unannotate(this.params);
+
+         if (this.varargs) {
+            result += ' . ' + this.varargs;
+         }
+
+         result += ') ...)';
+
+         return result;
       };
    };
 
@@ -518,36 +572,55 @@
       }
       
       if (form instanceof List) {
-         var atom = form.head();
+         if (form.length() === 2) {
+            var atom = form.head(),
+                value = form.last();
 
-         if (atom instanceof Atom && atom.value === 'quote') {
-            return form.last();
+            if (atom instanceof Atom && atom.value === 'quote') {
+               return value;
+            }
          }
       } 
       
       if (form instanceof List) {
-         var atom = form.head(),
-             args = form.tail();
+         if (form.length() === 4) {
+            var atom = form.get(0),
+                pred = form.get(1),
+                conseq = form.get(2),
+                alt = form.get(3);
 
-         if (atom instanceof Atom && atom.value === 'if' && args.length === 3) {
-            var pred = args[0],
-                conseq = args[1],
-                alt = args[2];
-
-            return eval_form(env, eval_form(env, pred).value ? conseq : alt);
+            if (atom instanceof Atom && atom.value === 'if') {
+               return eval_form(env, eval_form(env, pred).value ? conseq : alt);
+            }
          }
       }
 
       if (form instanceof List) {
-         var atom = form.head(),
-             args = form.tail();
+         if (form.length() === 3) {
+            var atom = form.get(0),
+                variable = form.get(1),
+                value = form.get(2);
 
-         if (atom instanceof Atom && atom.value === 'set!') {
-            var variable = args[0],
-                value_form = args[1];
+            if (atom instanceof Atom && atom.value === 'define' && variable instanceof Atom) {
+               return set_variable(env, variable, eval_form(env, value));
+            }
+         }
+      }
 
-            if (variable instanceof Atom) {
-               return set_variable(env, variable, eval_form(env, value_form));
+      if (form instanceof List) {
+         if (form.length() === 3) {
+            var atom = form.get(0),
+                args = form.get(1),
+                body = form.get(2);
+
+            if (atom instanceof Atom && atom.value === 'define' && args instanceof List) {
+               var proc = args.head(),
+                   params = args.tail(),
+                   fn = make_normal_func(env, params, body);
+
+               define_variable(env, proc, fn);
+
+               return fn;
             }
          }
       }
@@ -617,17 +690,20 @@
    };
 
    var bind_vars = function(env, bindings) {
-      var new_env = {};
-
-      for (var prop in bindings) {
-         new_env[prop] = bindings[prop];
-      }
+      var locals = {};
 
       for (var prop in env) {
-         new_env[prop] = env[prop];
+         locals[prop] = env[prop];
       }
 
-      return new_env;
+      _.each(bindings, pair => {
+         var param = pair[0],
+             arg = pair[1];
+
+         locals[param] = arg;
+      });
+
+      return locals;
    };
 
    var primitive_bindings = function() {
