@@ -431,7 +431,7 @@
                 remaining_args = _.drop(args, this.params.length);
 
             if (remaining_args.length) {
-               locals = bind_vars(locals, [this.varargs, new List(remaining_args)]);
+               locals = bind_vars(locals, [[this.varargs, new List(remaining_args)]]);
             }
                              
             return eval_form(locals, this.body);
@@ -619,6 +619,71 @@
                    fn = make_normal_func(env, params, body);
 
                define_variable(env, proc, fn);
+
+               return fn;
+            }
+         }
+      }
+
+      if (form instanceof List) {
+         if (form.length() === 3) {
+            var atom = form.get(0),
+                args = form.get(1),
+                body = form.get(2);
+
+            if (atom instanceof Atom && atom.value === 'define' && args instanceof DottedList) {
+               var initial = args.initial(),
+                   proc = _.head(initial),
+                   params = _.tail(initial),
+                   varargs = args.last(),
+                   fn = make_var_args(varargs, env, params, body);
+
+               define_variable(env, proc, fn);
+
+               return fn;
+            }
+         }
+      }
+
+      if (form instanceof List) {
+         if (form.length() === 3) {
+            var atom = form.get(0),
+                args = form.get(1),
+                body = form.get(2);
+
+            if (atom instanceof Atom && atom.value === 'lambda' && args instanceof List) {
+               var params = args.value,
+                   fn = make_normal_func(env, params, body);
+
+               return fn;
+            }
+         }
+      }
+
+      if (form instanceof List) {
+         if (form.length() === 3) {
+            var atom = form.get(0),
+                args = form.get(1),
+                body = form.get(2);
+
+            if (atom instanceof Atom && atom.value === 'lambda' && args instanceof DottedList) {
+               var params = args.initial(),
+                   varargs = args.last(),
+                   fn = make_var_args(varargs, env, params, body);
+                   
+               return fn;
+            }
+         }
+      }
+
+      if (form instanceof List) {
+         if (form.length() === 3) {
+            var atom = form.get(0),
+                varargs = form.get(1),
+                body = form.get(2);
+
+            if (atom instanceof Atom && atom.value === 'lambda' && varargs instanceof Atom) {
+               var fn = make_var_args(varargs, env, [], body);
 
                return fn;
             }
