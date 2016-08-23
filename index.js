@@ -1,8 +1,11 @@
 ;(function(exports) {
+   'use strict';
+
    // Dependencies ------------------------------------------------------------
    var R = require('readline'),
        P = require('parsimmon'),
-       _ = require('lodash');
+       _ = require('lodash'),
+       fs = require('fs');
 
    // Exceptions --------------------------------------------------------------
    var NotFunction = function(message, fn) {
@@ -284,6 +287,17 @@
       }
    };
 
+   // IO Primitives -----------------------------------------------------------
+   var load = function(filename) {
+      return read_expr_list(fs.readFileSync(filename, 'utf8'));
+   };
+
+   var read_all = function(args) {
+      var filename = args[0].value;
+
+      return new List(load(filename));
+   };
+
    // Primitives --------------------------------------------------------------
    var primitives = {
       '+': numeric_binop((a, b) => { return a + b; }),
@@ -310,7 +324,8 @@
       'cons': cons,
       'eq?': eqv,
       'eqv?': eqv,
-      'equal?': equal
+      'equal?': equal,
+      'read-all': read_all
    };
 
    var apply = function(fn, args) {
@@ -548,15 +563,23 @@
                             return new List([new Atom('quote')].concat(value)); 
                          }));
 
-   var parse = function(string) {
-      var result = parseExpr.parse(string);
+   var read_or_throw = function(parser, input) {
+      var result = parser.parse(input);
 
       if (result.status) {
          return result.value;
       } else {
-         throw Parser(P.formatError(string, result));
+         throw Parser(P.formatError(input, result));
       }
-   }
+   };
+
+   var read_expr = function(input) {
+      return read_or_throw(parseExpr, input);
+   };
+
+   var read_expr_list = function(input) {
+      return read_or_throw(P.sepBy(parseExpr, spaces).skip(P.optWhitespace), input);
+   };
    
    // Evaluation --------------------------------------------------------------
    var eval_form = function(env, form) {
@@ -571,6 +594,19 @@
          return get_variable(env, form.value);
       }
       
+      if (form instanceof List) {
+         if (form.length() === 2) {
+            var atom = form.head(),
+                string = form.last();
+
+            if (atom instanceof Atom && atom.value === 'load' && string instanceof LString) {
+               var filename = string.value;
+
+               return _.last(load(filename).map(x => { return eval_form(env, x); }));
+            }
+         }
+      }
+
       if (form instanceof List) {
          if (form.length() === 2) {
             var atom = form.head(),
@@ -601,8 +637,20 @@
                 variable = form.get(1),
                 value = form.get(2);
 
-            if (atom instanceof Atom && atom.value === 'define' && variable instanceof Atom) {
+            if (atom instanceof Atom && atom.value === 'set!' && variable instanceof Atom) {
                return set_variable(env, variable, eval_form(env, value));
+            }
+         }
+      }
+
+      if (form instanceof List) {
+         if (form.length() === 3) {
+            var atom = form.get(0),
+                variable = form.get(1),
+                value = form.get(2);
+
+            if (atom instanceof Atom && atom.value === 'define' && variable instanceof Atom) {
+               return define_variable(env, variable, eval_form(env, value));
             }
          }
       }
@@ -691,20 +739,6 @@
       }
 
       if (form instanceof List) {
-         var atom = form.head(),
-             args = form.tail();
-
-         if (atom instanceof Atom && atom.value === 'define') {
-            var variable = args[0],
-                value_form = args[1];
-
-            if (variable instanceof Atom) {
-               return define_variable(env, variable, eval_form(env, value_form));
-            }
-         }
-      }
-
-      if (form instanceof List) {
          var form = form.value.map(x => eval_form(env, x)),
              fn = _.head(form),
              args = _.tail(form);
@@ -717,7 +751,7 @@
 
    var eval_string = function(env, expr) {
       try {
-         return eval_form(env, parse(expr)).toString();
+         return eval_form(env, read_expr(expr)).toString();
       } catch(e) {
          return e.message;
       }
@@ -823,8 +857,4 @@
    };
 
    main();
-
-   exports.scheme = {
-      parse: parse
-   };
 })(typeof exports === 'undefined' ? this : exports);
