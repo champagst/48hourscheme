@@ -288,6 +288,19 @@
    };
 
    // IO Primitives -----------------------------------------------------------
+   var apply_proc = function(args) {
+      var fn = _.head(args),
+          list = args[1];
+
+      if (list instanceof List) {
+         args = list.value;
+      } else {
+         args = _.tail(args);
+      }
+
+      return fn.apply(args);
+   };
+
    var load = function(filename) {
       return read_expr_list(fs.readFileSync(filename, 'utf8'));
    };
@@ -296,6 +309,12 @@
       var filename = args[0].value;
 
       return new List(load(filename));
+   };
+
+   var read_contents = function(args) {
+      var filename = _.head(args).value;
+
+      return new LString(load(filename));
    };
 
    // Primitives --------------------------------------------------------------
@@ -325,6 +344,8 @@
       'eq?': eqv,
       'eqv?': eqv,
       'equal?': equal,
+      'apply': apply_proc,
+      'read-contents': read_contents,
       'read-all': read_all
    };
 
@@ -600,9 +621,10 @@
                 string = form.last();
 
             if (atom instanceof Atom && atom.value === 'load' && string instanceof LString) {
-               var filename = string.value;
-
-               return _.last(load(filename).map(x => { return eval_form(env, x); }));
+               var filename = string.value,
+                   listing = load(filename);
+              
+               return _.last(_.map(listing, form => { return eval_form(env, form); }));
             }
          }
       }
@@ -816,10 +838,14 @@
    };
 
    // REPL --------------------------------------------------------------------
-   var run_one = function(expr) {
+   var run_one = function(args) {
       var env = primitive_bindings();
 
-      eval_and_print(env, expr);
+      try {
+         console.error(eval_form(env, new List([new Atom('load'), new LString(args[2])])).toString());
+      } catch (e) {
+         console.error(e.message);
+      }
    };
 
    var run_repl = function() {
@@ -850,7 +876,7 @@
       if (process.argv.length === 2) {
          run_repl();
       } else if (process.argv.length === 3) {
-         run_one(process.argv[2]);
+         run_one(process.argv);
       } else {
          console.log('Program takes only 0 or 1 argument');
       }
