@@ -142,7 +142,7 @@
 
    var unpack_bool = function(b) {
       if (b instanceof Bool) {
-         return b;
+         return b.value;
       } else {
          throw TypeMismatch('boolean', b);
       }
@@ -502,7 +502,7 @@
    // Parsing -----------------------------------------------------------------
    var symbol = P.oneOf('!#$%&|*+-/:<=>?@^_~');
 
-   var spaces = P.whitespace.atLeast(1)
+   var spaces = P.whitespace.atLeast(1);
 
    var parseString = P.oneOf('"')
                       .then(
