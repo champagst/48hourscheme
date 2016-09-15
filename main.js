@@ -3,13 +3,12 @@
    var R = require('readline'),
        S = require('./scanner'),
        T = require('./types'),
-       E = require('./eval'),
        V = require('./environment');
 
    // Helpers -----------------------------------------------------------------
    var _eval_str = function(str, env) {
       try {
-         return E.eval(S.scan(str), env).toString();
+         return V.eval(S.scan(str), env).toString();
       } catch(e) {
          return e.message;
       }
@@ -21,7 +20,7 @@
          output: process.stdout
       });
 
-      var env = V.primitive_bindings();
+      var env = V.Globals();
 
       rl.prompt();
 
@@ -39,10 +38,10 @@
    };
 
    var _run_one = function(args) {
-      var env = V.primitive_bindings();
+      var env = V.Globals();
 
       try {
-         console.error(E.eval(new T.List([new T.Atom('load'), new T.String(args[2])])).toString());
+         console.error(V.eval(new T.List([new T.Atom('load'), new T.String(args[2])]), env).toString());
       } catch(e) {
          console.error(e.message);
       }

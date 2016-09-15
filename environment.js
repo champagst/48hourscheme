@@ -4,10 +4,15 @@
 
    // Dependencies ------------------------------------------------------------
    var _ = require('ramda'),
-       E = require('./eval'),
+       fs = require('fs'),
+       S = require('./scanner'),
        T = require('./types');
 
    // Helpers -----------------------------------------------------------------
+   var _car = _.head;
+   var _cdr = _.tail;
+   var _cadr = _.compose(_car, _cdr);
+   var _caddr = _.compose(_car, _cdr, _cdr);
    var _second = _.compose(_.head, _.tail);
 
    // Exceptions --------------------------------------------------------------
@@ -23,6 +28,192 @@
          name: 'TypeMismatch',
          message: 'Invalid type: expected ' + expected + ', found ' + found
       };
+   };
+
+   var UnboundVar = function(message, varname) {
+      return {
+         name: 'UnboundVar',
+         message: message + ': ' + varname
+      };
+   };
+
+   var BadSpecialForm = function(message, form) {
+      return {
+         name: 'BadSpecialForm',
+         message: message + ': ' + form
+      };
+   };
+
+   var NumArgs = function(expected, found) {
+      return {
+         name: 'NumArgs',
+         message: 'Expected ' + expected + ' args; found values ' + T.unannotate(found)
+      };
+   };
+
+   // Eval --------------------------------------------------------------------
+   var _apply = function(proc, args) {
+      if (proc instanceof T.PrimitiveFunc) {
+         return proc.fn(args);
+      } else if (proc instanceof T.Func) {
+         if (proc.params.length != args.length && !proc.varargs) {
+            throw NumArgs(proc.params.length, args);
+         } else {
+            return V.eval(proc.body, new V.Environment(proc.params, args, proc.varargs, proc.closure));
+         }
+      }
+   };
+
+   V.eval = function(form, env) {
+      if (form instanceof T.String ||
+          form instanceof T.Number ||
+          form instanceof T.Bool ||
+          form instanceof T.Character) {
+         return form;
+      }
+
+      if (form instanceof T.Atom) {
+         return env.get(form.value);
+      }
+
+      if (form instanceof T.List) {
+         if (form.head().value in special_forms) {
+            var proc = form.head().value,
+                params = form.tail();
+
+            return _apply_sp_form(proc, params, env);
+         } else {
+            var head = V.eval(form.head(), env),
+                params = _.map(param => V.eval(param, env), form.tail());
+
+            return _apply(head, params);
+         }
+      }
+
+      throw BadSpecialForm('Unrecognized special form', form);
+   };
+
+   // Special Forms -----------------------------------------------------------
+   var _apply_sp_form = function(proc, args, env) {
+      return special_forms[proc](args, env);
+   };
+
+   var _make_func = function(params, varargs, body, env) {
+      return new T.Func(_.map(x => x.toString(), params), varargs, body, env);
+   };
+
+   var _make_normal_func = function(params, body, env) {
+      return _make_func(params, undefined, body, env);
+   };
+
+   var _make_var_args = function(params, varargs, body, env) {
+      return _make_func(params, varargs.toString(), body, env);
+   };
+
+   var _load_proc = function(filename) {
+      return S.scan_list(fs.readFileSync(filename, 'utf8'));
+   };
+
+   var _load = function(args, env) {
+      var filename = _car(args).value,
+          forms = _load_proc(filename);
+
+      forms = _.map(form => V.eval(form, env), forms);
+
+      return _.last(forms);
+   };
+
+   var _if = function(args, env) {
+      var pred = _car(args),
+          conseq = _cadr(args),
+          alt = _caddr(args),
+          result;
+
+      result = V.eval(pred, env).value ? conseq : alt;
+
+      return V.eval(result, env);
+   };
+
+   var _quote = function(args) {
+      return _car(args);
+   };
+
+   var _set = function(args, env) {
+      var variable = _car(args),
+          value = _cadr(args);
+
+      return env.set(variable, V.eval(value, env));
+   };
+
+   var _define = function(args, env) {
+      var head = _car(args);
+
+      if (head instanceof T.Atom) {
+         var value = _cadr(args);
+
+         return env.define(head, V.eval(value, env));
+      }
+
+      if (head instanceof T.List) {
+         var proc = head.head(),
+             params = head.tail(),
+             body = _cadr(args),
+             fn = _make_normal_func(params, body, env);
+
+         env.define(proc, fn);
+
+         return fn;
+      }
+
+      if (head instanceof T.DottedList) {
+         var proc = head.head(),
+             params = _.tail(head.initial()),
+             varargs = head.last(),
+             body = _cadr(args),
+             fn = _make_var_args(params, varargs, body, env);
+
+         env.define(proc, fn);
+
+         return fn;
+      }
+   };
+
+   var _lambda = function(args, env) {
+      var head = _car(args);
+
+      if (head instanceof T.List) {
+         var params = head.value,
+             body = _cadr(args),
+             fn = _make_normal_func(params, body, env);
+
+         return fn;
+      }
+
+      if (head instanceof T.DottedList) {
+         var params = head.initial(),
+             varargs = head.last(),
+             body = _cadr(args),
+             fn = _make_var_args(params, varargs, body, env);
+
+         return fn;
+      }
+
+      if (head instanceof T.Atom) {
+         var varargs = head,
+             body = _cadr(args),
+             fn = _make_var_args([], varargs, body, env);
+
+         return fn;
+      }
+   };
+
+   var special_forms = {
+      'load': _load,
+      'if': _if,
+      'quote': _quote,
+      'set!': _set,
+      'define': _define,
+      'lambda': _lambda
    };
 
    // Unpackers ---------------------------------------------------------------
@@ -247,7 +438,7 @@
          args = _.tail(args);
       }
 
-      return E.apply(proc, args);
+      return _apply(proc, args);
    };
 
    // Primitives --------------------------------------------------------------
@@ -281,15 +472,70 @@
    };
 
    // Environment -------------------------------------------------------------
-   V.primitive_bindings = function() {
-      var locals = {};
+   V.Environment = function(params, args, varargs, outer) {
+      this.params = params || [];
+      this.args = args || [];
+      this.varargs = varargs || null;
+      this.outer = outer || null;
+      this.bindings = _.zip(this.params, this.args).reduce((previous, [param, arg]) => {
+         previous[param] = arg;
+         return previous;
+      }, {});
 
-      for (var prop in primitives) {
-         locals[prop] = new T.PrimitiveFunc(primitives[prop]);
+      var remaining_args = _.drop(this.params.length, this.args);
+
+      if (this.varargs && remaining_args.length) {
+         this.bindings[this.varargs] = new T.List(remaining_args);
       }
 
-      return locals;
+      this.get = function(variable) {
+         if (!(variable in this.bindings)) {
+            if (!this.outer) {
+               throw UnboundVar('Getting an unbound variable', variable);
+            } else {
+               return this.outer.get(variable);
+            }
+         }
+
+         return this.bindings[variable];
+      };
+
+      this.set = function(variable, value) {
+         if (!(variable in this.bindings)) {
+            if (!this.outer) {
+               throw UnboundVar('Setting an unbound variable', variable);
+            } else {
+               return this.outer.set(variable, value);
+            }
+         }
+
+         this.bindings[variable] = value;
+         return value;
+      };
+
+      this.define = function(variable, value) {
+         this.bindings[variable] = value;
+         return value;
+      };
    };
+
+   var standard_env = function() {
+      var env = new V.Environment();
+
+      Object.keys(primitives).forEach((variable) => {
+         env.define(variable, new T.PrimitiveFunc(primitives[variable]));
+      });
+
+      return env;
+   };
+
+   V.Globals = (function() {
+      var env = standard_env();
+
+      return function() {
+         return env;
+      };
+   })();
 
    if (typeof exports !== 'undefined') {
       if (typeof module !== 'undefined') {

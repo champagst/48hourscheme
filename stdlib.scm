@@ -12,6 +12,8 @@
 (define (odd? num) (= (mod num 2) 1))
 (define (even? num) (= (mod num 2) 0))
 
+(define (sub1 x) (- x 1))
+
 (define (foldr func end lst)
   (if (null? lst)
       end
